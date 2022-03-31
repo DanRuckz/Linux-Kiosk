@@ -20,6 +20,9 @@ int main(int argc, char *argv[]){
     
     char fail_arguments[] = "No arguments given, aborting.\n";
     //This functions takes the arguments from the program and coppies it to the command vector. This is needed because argv[0] is always the current program, and we cannot send that to execv
+    //As an additional explanation to this, execv accepts char* and char**, each c string has to be null terminated and the last pointer in the char** array has to be a null pointer.
+    //Each string in argv is null terminated but the last element is not a null pointer. Also, I am unaware of a way to send a partial char** argument.
+    //I chose to use a vector because of it's ease of use and management and also easy to free the memory at the end.
     copy_argv(&command, &argc, argv);
     command.push_back(NULL);
     //Those signals are the de-facto ways to finish the program, the memory allocated above is cleaned within the signal handlers.

@@ -7,7 +7,6 @@
 #include <vector>
 #include <cstring>
 
-//test change test change
 
 void sizeof_string(const char*, unsigned int *);
 void copy_argv(std::vector<char*> *command, int * argc, char** argv);
@@ -46,6 +45,7 @@ int main(int argc, char *argv[]){
                 execv(command[0],command.data());
                 perror("Failed");
                 puts("Please use absolute path for your program");
+                exit(0);
             }
                 waitpid(pid, &child_status_val, 0);
                 puts("finished waiting, closing.");

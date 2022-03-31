@@ -116,7 +116,7 @@ void copy_argv(std::vector<char*> *command, int* argc, char** argv){
         sizeof_string(argv[i], &ssize);
         string_allocator = (char*)malloc(ssize);
             if(string_allocator == NULL){
-                puts("Error Happened, could not allocate memory\n");
+                puts("Error Happened, could not allocate memory");
             }
         strcpy(string_allocator, argv[i]);
         command->push_back(string_allocator);

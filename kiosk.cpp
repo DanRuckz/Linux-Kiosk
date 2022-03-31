@@ -7,14 +7,13 @@
 #include <vector>
 #include <cstring>
 
-//test change test change
 
 void sizeof_string(const char*, unsigned int *);
 void copy_argv(std::vector<char*> *command, int * argc, char** argv);
 pid_t pid;
 void handle_signal(int sig);
 std::vector<char*>command;
-
+std::string execCommand(const char* cmd);
 
 int main(int argc, char *argv[]){
     
@@ -36,7 +35,11 @@ int main(int argc, char *argv[]){
 
         //This is the loop where the kiosk is happening. A fork is happening here, the child is running and the parent is waiting
         //as soon as the child has died, the parent would print "finished waiting, closing." and get back to the beginning of the loop and open a new child process with the same command.
+        std::string kill_command = "ps aux |grep -i " + std::string(command[0]) + "|grep -v 'grep'|grep -v "+ argv[0] + "|awk '{print $2}' |xargs kill 2>/dev/null";
+        std::string output = execCommand((char *)kill_command.c_str());
+        puts((char*)output.c_str());
         while(true){
+           
             pid = fork();
             if(pid == -1){
                 perror("");
@@ -46,6 +49,7 @@ int main(int argc, char *argv[]){
                 execv(command[0],command.data());
                 perror("Failed");
                 puts("Please use absolute path for your program");
+                kill(getppid(),SIGTERM);
             }
                 waitpid(pid, &child_status_val, 0);
                 puts("finished waiting, closing.");
@@ -54,7 +58,6 @@ int main(int argc, char *argv[]){
             free(command[i]);
         }
         command.clear();
-
     return 0;
 }
 
@@ -104,6 +107,25 @@ void handle_signal(int sig)
         kill(pid, SIGTERM);
         exit(0);
     }
+
+
+std::string execCommand(const char* cmd){
+    char buffer[128];
+    std::string result = "";
+    FILE* pipe = popen(cmd, "r");
+    if (!pipe) throw std::runtime_error("popen() failed!");
+    try {
+        while (fgets(buffer, sizeof buffer, pipe) != NULL) {
+            result += buffer;
+        }
+    } catch (...) {
+        pclose(pipe);
+        throw;
+    }
+    pclose(pipe);
+    return result;
+}
+
 
     //strcat(argument, "\n");
     //sizeof_string(argument, &size);

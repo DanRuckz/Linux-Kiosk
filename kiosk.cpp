@@ -6,6 +6,7 @@
 #include <iostream>
 #include <vector>
 #include <cstring>
+#include <ctime>
 
 
 void sizeof_string(const char*, unsigned int *);
@@ -25,6 +26,7 @@ int main(int argc, char *argv[]){
     //signal handlers for SIGINT and SIGTERM, I think we can make a bitmask for the rest of them and use that.
     signal(SIGINT, handle_signal);
     signal(SIGTERM, handle_signal);
+    signal(SIGUSR1, handle_signal);
         
         //Checks if the number of arguments is sufficient, to avoid sending a vector without arguments to execv. One permanent element is always a NULL pointer, because the execv requires the argument vector to be NULL
         //terminated for each argument, and the last argument must be a null pointer. Writing the error message to stdout and quitting.
@@ -32,28 +34,61 @@ int main(int argc, char *argv[]){
         write(STDOUT_FILENO, fail_arguments, sizeof(fail_arguments));
         return 0;
         }
-
+        //This is where we prepare the strings for the command to look up the process name and preemtively kill it, so the process the kiosk spawns should be the only one.
+        std::string current_program_name = "echo " + std::string(command[0]) + "|awk -F/ '{print $NF}'";
+        current_program_name = execCommand(current_program_name.c_str());
+        current_program_name[strlen(current_program_name.c_str())-1] = ' ';
+        std::string kill_command = "ps aux |grep -i " + current_program_name + "|grep -v 'grep'|grep -v "+ argv[0] + "|awk '{print $2}' |xargs kill 2>/dev/null";
+        std::string output = execCommand((char *)kill_command.c_str());
+        time_t start_time = time(0);
+        unsigned int number_of_forks = 0;
+        time_t running_time;
+        
+        int fd[2];
+        if(pipe(fd) == -1){
+            perror("Failed");
+            return -1;
+        }
         //This is the loop where the kiosk is happening. A fork is happening here, the child is running and the parent is waiting
         //as soon as the child has died, the parent would print "finished waiting, closing." and get back to the beginning of the loop and open a new child process with the same command.
-        std::string kill_command = "ps aux |grep -i " + std::string(command[0]) + "|grep -v 'grep'|grep -v "+ argv[0] + "|awk '{print $2}' |xargs kill 2>/dev/null";
-        std::string output = execCommand((char *)kill_command.c_str());
-        puts((char*)output.c_str());
         while(true){
-           
+
+            running_time = time(0);
+            //printf("number of forks: %d\n", number_of_forks);
+            if(running_time - start_time <= 5 && number_of_forks >= 5){
+                //printf("running time %lu:\n", running_time-start_time);
+                handle_signal(SIGUSR1);
+            }
+            if(running_time - start_time > 5 && number_of_forks <5){
+                start_time = time(0);
+                number_of_forks = 0;
+            }
+
             pid = fork();
             if(pid == -1){
                 perror("");
+                exit(0);
             }
 
             if (pid == 0){
+                number_of_forks+=1;
+                if(write(fd[1], &number_of_forks, sizeof(int)) == -1){
+                    puts("Can't write to pipe");
+                }
                 execv(command[0],command.data());
                 perror("Failed");
                 puts("Please use absolute path for your program");
                 kill(getppid(),SIGTERM);
             }
+            else{
+                if(read(fd[0], &number_of_forks, sizeof(int)) == -1){
+                    puts("Can't read from pipe");
+                }
                 waitpid(pid, &child_status_val, 0);
                 puts("finished waiting, closing.");
+            }
         }
+
         for(int i=0;i<command.size()-1;i++){
             free(command[i]);
         }
@@ -95,17 +130,24 @@ void handle_signal(int sig)
     char* signal;
     if (sig = 2){
         signal = (char*)"SIGINT";
+        printf("Signal %s received, closing by sending SIGTERM\n", signal);
+
     }
     else if (sig = 15){
         signal = (char*)"SIGTERM";
+        printf("Signal %s received, closing by sending SIGTERM\n", signal);
     }
-    printf("Signal %s received, closing\n", signal);
-    int size = command.size();
-    for (int i=0;i<size-1;i++){
-        free(command[i]);
-        }
-        kill(pid, SIGTERM);
-        exit(0);
+    else if (sig = 10){
+        signal = (char*)"SIGUSR1";
+        pid = getpid();
+        printf("Signal %s received, closing to prevent a bug by sending SIGTERM\n", signal);
+    }
+        int size = command.size();
+        for (int i=0;i<size-1;i++){
+            free(command[i]);
+            }
+            kill(pid, SIGTERM);
+            exit(0);
     }
 
 

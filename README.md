@@ -13,7 +13,7 @@ or if run from a terminal a CTRL-C (SIGINT) could be sent.
 
 How to get the program and use:
 
-git clone git@github.com:DanRuckz/Linux-Kiosk.git
-g++ kiosk.cpp -o kiosk
-chmod +x kiosk (if needed)
+git clone git@github.com:DanRuckz/Linux-Kiosk.git --- 
+g++ kiosk.cpp -o kiosk --- 
+chmod +x kiosk (if needed) --- 
 ./kiosk <absolute_path_for_target_program> <args>

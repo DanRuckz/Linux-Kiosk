@@ -8,7 +8,7 @@
 #include <cstring>
 #include <ctime>
 
-
+//GLOBAL DECLARATIONS
 void sizeof_string(const char*, unsigned int *);
 void copy_argv(std::vector<char*> *command, int * argc, char** argv);
 pid_t pid;
@@ -22,8 +22,7 @@ int main(int argc, char *argv[]){
     //This functions takes the arguments from the program and coppies it to the command vector. This is needed because argv[0] is always the current program, and we cannot send that to execv
     copy_argv(&command, &argc, argv);
     command.push_back(NULL);
-    int child_status_val;
-    //signal handlers for SIGINT and SIGTERM, I think we can make a bitmask for the rest of them and use that.
+    //Those signals are the de-facto ways to finish the program, the memory allocated above is cleaned within the signal handlers.
     signal(SIGINT, handle_signal);
     signal(SIGTERM, handle_signal);
     signal(SIGUSR1, handle_signal);
@@ -35,15 +34,20 @@ int main(int argc, char *argv[]){
         return 0;
         }
         //This is where we prepare the strings for the command to look up the process name and preemtively kill it, so the process the kiosk spawns should be the only one.
-        std::string current_program_name = "echo " + std::string(command[0]) + "|awk -F/ '{print $NF}'";
+        //All of it is done by just simply running shell commands and getting their stdout back to a variable.
+        std::string current_program_name = "echo " + std::string(command[0]) + "|awk -F/ '{print $NF}'"; //getting the program name using shell commands
         current_program_name = execCommand(current_program_name.c_str());
-        current_program_name[strlen(current_program_name.c_str())-1] = ' ';
+        current_program_name[strlen(current_program_name.c_str())-1] = ' '; //The command returned has a \n in the end, the current line replaces it with a ' '.
         std::string kill_command = "ps aux |grep -i " + current_program_name + "|grep -v 'grep'|grep -v "+ argv[0] + "|awk '{print $2}' |xargs kill 2>/dev/null";
-        std::string output = execCommand((char *)kill_command.c_str());
+        std::string output = execCommand((char *)kill_command.c_str()); //this executes the following ps aux |grep -i <kiosk_program_name> |grep -v 'grep'|grep -v <current_program_name> |awk '{print $2}' |xargs kill 2>/dev/null"
+
+        //Initializing needed variables for the exis status of the child process and the timer with the fork count
+        int child_status_val;
         time_t start_time = time(0);
         unsigned int number_of_forks = 0;
         time_t running_time;
         
+        //Creating a pipe here for the processes to communicate
         int fd[2];
         if(pipe(fd) == -1){
             perror("Failed");
@@ -51,44 +55,50 @@ int main(int argc, char *argv[]){
         }
         //This is the loop where the kiosk is happening. A fork is happening here, the child is running and the parent is waiting
         //as soon as the child has died, the parent would print "finished waiting, closing." and get back to the beginning of the loop and open a new child process with the same command.
+        //The aim is to keep the target window open
         while(true){
-
+            
+            //The following 2 if statements are responsible to make sure that the program doesn't get into an infinite fork loop
+            //Sometimes the target programs return 0 after opening and they don't close - this creates an infinite loop of opening target programs and avoids a total meltdown
+            //It's based on a timer and will stop execution is the child process spawns fast enough, this is good enough for a browser.
             running_time = time(0);
-            //printf("number of forks: %d\n", number_of_forks);
-            if(running_time - start_time <= 5 && number_of_forks >= 5){
-                //printf("running time %lu:\n", running_time-start_time);
+            if(running_time - start_time <= 2 && number_of_forks >= 2){
                 handle_signal(SIGUSR1);
             }
-            if(running_time - start_time > 5 && number_of_forks <5){
+            if(running_time - start_time > 2 && number_of_forks <2){
                 start_time = time(0);
                 number_of_forks = 0;
             }
-
+            //forking the process here
             pid = fork();
             if(pid == -1){
                 perror("");
                 exit(0);
             }
-
+            //Child process execution 'number_of_forks' is added +1 after each successful fork, this is transferred back to the parent process to make sure the fork
+            //is happening with compliance with the timer (not too fast)
             if (pid == 0){
                 number_of_forks+=1;
                 if(write(fd[1], &number_of_forks, sizeof(int)) == -1){
                     puts("Can't write to pipe");
                 }
                 execv(command[0],command.data());
+                //if execution fails due to some error, throw a message and kill the parent process with SIGTERM - which should kill the child too
                 perror("Failed");
                 puts("Please use absolute path for your program");
                 kill(getppid(),SIGTERM);
             }
             else{
+                //parent reading from the child and puts it into the 'number_of_forks' variable
                 if(read(fd[0], &number_of_forks, sizeof(int)) == -1){
                     puts("Can't read from pipe");
                 }
+                //waiting for the child to end and throwing a message. if signal not sent, after the child is done the loop starts over
                 waitpid(pid, &child_status_val, 0);
                 puts("finished waiting, closing.");
             }
         }
-
+        //If for some reason the loop breaks, memory is freed here
         for(int i=0;i<command.size()-1;i++){
             free(command[i]);
         }
@@ -150,7 +160,7 @@ void handle_signal(int sig)
             exit(0);
     }
 
-
+//This function takes a const char* and returns a string, executes a shell command and returns the output. Usually ends with '\n'
 std::string execCommand(const char* cmd){
     char buffer[128];
     std::string result = "";
@@ -167,8 +177,3 @@ std::string execCommand(const char* cmd){
     pclose(pipe);
     return result;
 }
-
-
-    //strcat(argument, "\n");
-    //sizeof_string(argument, &size);
-    //write(STDOUT_FILENO, argument, size);    
